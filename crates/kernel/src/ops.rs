@@ -917,6 +917,12 @@ fn take_attempt() -> bool {
 /// The result carries its exact history ([`Body::history`]) over the operands `[a, b]`,
 /// whichever way it was made, or none where a step it took does not report one.
 pub fn boolean(a: &Body, b: &Body, op: BoolOp) -> Result<Option<Body>> {
+    #[cfg(not(target_arch = "wasm32"))]
+    if crate::nightfall::enabled()
+        && let Some(body) = crate::nightfall::boolean(a, b, op)
+    {
+        return Ok(Some(body));
+    }
     crate::profile::timed(crate::profile::Kind::Boolean, || boolean_untimed(a, b, op))
 }
 

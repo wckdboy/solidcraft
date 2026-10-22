@@ -1846,6 +1846,12 @@ fn closed(input: &Body, b: Body) -> Result<Body> {
 /// largest that works).
 pub fn fillet(body: &Body, edges: &[Vec3], radius: f64) -> Result<Body> {
     body.require_brep("fillet")?;
+    #[cfg(not(target_arch = "wasm32"))]
+    if crate::nightfall::enabled()
+        && let Some(b) = crate::nightfall::blend(body, edges, radius, true)
+    {
+        return Ok(b);
+    }
     // A round that would run past its faces into other geometry or another round (#1080).
     // Checked once built, so a refusal of the build itself stands as it is.
     let size = crate::blend_fit::Size::Round(radius);
@@ -2087,6 +2093,12 @@ pub fn chamfer(body: &Body, edges: &[Vec3], distance: f64) -> Result<Body> {
     }
     if edges.is_empty() || edges.len() > 1000 {
         return Err(KernelError::Invalid("select 1…1000 edges".into()));
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    if crate::nightfall::enabled()
+        && let Some(b) = crate::nightfall::blend(body, edges, distance, false)
+    {
+        return Ok(b);
     }
     // A chamfer that would run past its faces into other geometry or another chamfer, or whose
     // result changes more than the chamfers can (#1080).

@@ -70,6 +70,13 @@ People trust SolidCraft with their designs; a crash loses their work. **This out
   runs FreeCAD as a separate program through its public scripting API to compute reference values;
   nothing from FreeCAD is linked, vendored or shipped.) The sketch solver and the blend
   operations are our own.
+- **Nightfall backend (this fork).** `crates/kernel/src/nightfall.rs` can hand booleans,
+  fillets and chamfers to Nightfall (Apache-2.0) through `nf kernel serve`, a separate program
+  spoken to over a pipe (Nightfall RFC 0015, docs/nightfall-backend.md). Nightfall runs
+  OpenCASCADE in its own process; nothing from either is linked, vendored or shipped here, as
+  with the FreeCAD oracle. The module is native-only and off unless `SOLIDCRAFT_NIGHTFALL`
+  names the `nf` executable; a refused request falls back to truck, so wasm and the default
+  build are unchanged.
 - **Assets — absolutely essential.** SolidCraft contains **no iconography, images, fonts or
   artwork from commercial CAD products — ever.** Command icons are the original SVG masters in
   `assets/icons/ui/design/svg/`, compiled through `crates/ui-egui/src/icon_svg.rs`.

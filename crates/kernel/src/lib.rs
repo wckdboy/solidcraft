@@ -103,6 +103,9 @@ mod outline;
 mod outline_tests;
 mod par;
 pub use par::{for_each_on_threads, map_on_threads, map_with_local_pools};
+/// Booleans, fillets and chamfers on Nightfall's kernel in a child process (native only).
+#[cfg(not(target_arch = "wasm32"))]
+pub mod nightfall;
 #[cfg(test)]
 mod pinch_tests;
 mod planar_faces;
