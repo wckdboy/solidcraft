@@ -19,11 +19,17 @@ With the variable unset, nothing changes, and the browser build never has the ba
 
 ## What runs where
 
-| Operation | With the backend | Without |
+Only the operations a user's features make are routed. In the kernel these are
+`feature_boolean`, `feature_fillet` and `feature_chamfer`; the document calls them for joins,
+cuts, intersects, fillets and chamfers. The kernel's own algorithms (blends, shells, coplanar
+joins and so on) keep calling truck's `boolean`, `fillet` and `chamfer`, so the intermediate
+bodies they were written for are unchanged.
+
+| Feature operation | With the backend | Without |
 | --- | --- | --- |
-| `boolean` (union, cut, intersect) | Nightfall first, truck if refused | truck |
-| `fillet` (constant radius) | Nightfall first, truck if refused | truck |
-| `chamfer` (equal distance) | Nightfall first, truck if refused | truck |
+| Join, cut, intersect | Nightfall first, truck if refused | truck |
+| Fillet (constant radius) | Nightfall first, truck if refused | truck |
+| Chamfer (equal distance) | Nightfall first, truck if refused | truck |
 | Everything else | truck | truck |
 
 A refused request falls back to truck and logs `nightfall … refused, using truck: …` at warn
@@ -54,12 +60,28 @@ JSON object per line on stdin and stdout.
 3. **Reading back.** `step_import` reads the result. `face_origin` gives each of our faces its
    STEP face, and the STEP face's rank is its number in the reply. The reply's areas are checked
    against ours (within 1%, the tessellation's sag), so a misnumbered face is refused, never used.
-4. **History.** Face history comes from the reply. Edge history follows from it:
+4. **Shape.** OpenCASCADE writes a whole turn of a cylinder or cone as one face running along a
+   seam. Truck builds such walls in two halves, and its later operations expect that, so the
+   result's seamed faces are cut free of their seams (`seam_faces::halved`). That history is
+   composed with the reply's. A result in several solids becomes one body of several pieces
+   (`join_apart`). Results carry face sources, planar roles, protection and colour as truck's
+   boolean does.
+5. **History.** Face history comes from the reply. Edge history follows from it:
    - Where both faces of a result edge come from one operand's two faces, and those faces met
      along exactly one edge, the result edge is that edge.
    - Otherwise it is where those faces newly meet (`EdgeOrigin::Meet`).
    - The body carries the result as an exact `History`, so persistent names, face attachments
      and lineage work as they do with truck.
+
+## Settings
+
+| Variable | Meaning |
+| --- | --- |
+| `SOLIDCRAFT_NIGHTFALL` | Path of `nf`; unset turns the backend off |
+| `SOLIDCRAFT_NIGHTFALL_TIMEOUT` | Seconds one request may run before truck takes it (10) |
+| `SOLIDCRAFT_NIGHTFALL_DUMP` | Folder that keeps every request, to replay with `nf kernel serve < request.jsonl` |
+
+While the backend is on, the app bar shows a **Nightfall OCCT** badge.
 
 ## Testing
 
