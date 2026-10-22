@@ -917,13 +917,20 @@ fn take_attempt() -> bool {
 /// The result carries its exact history ([`Body::history`]) over the operands `[a, b]`,
 /// whichever way it was made, or none where a step it took does not report one.
 pub fn boolean(a: &Body, b: &Body, op: BoolOp) -> Result<Option<Body>> {
+    crate::profile::timed(crate::profile::Kind::Boolean, || boolean_untimed(a, b, op))
+}
+
+/// [`boolean`] for a modelling feature (a join, cut or intersect the user made): on the
+/// Nightfall backend when it is on and takes it (docs/nightfall-backend.md), else [`boolean`].
+/// The kernel's own algorithms call [`boolean`], so their intermediate bodies stay truck's.
+pub fn feature_boolean(a: &Body, b: &Body, op: BoolOp) -> Result<Option<Body>> {
     #[cfg(not(target_arch = "wasm32"))]
     if crate::nightfall::enabled()
         && let Some(body) = crate::nightfall::boolean(a, b, op)
     {
         return Ok(Some(body));
     }
-    crate::profile::timed(crate::profile::Kind::Boolean, || boolean_untimed(a, b, op))
+    boolean(a, b, op)
 }
 
 fn boolean_untimed(a: &Body, b: &Body, op: BoolOp) -> Result<Option<Body>> {

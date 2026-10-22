@@ -158,7 +158,10 @@ mod untouched_faces_tests;
 pub mod watch;
 mod whole_face;
 
-pub use blend::{ChamferSide, chamfer, chamfer_sides, fillet, fillet_each, fillet_g2, fillet_g2_corners, fillet_max, fillet_max_each};
+pub use blend::{
+    ChamferSide, chamfer, chamfer_sides, feature_chamfer, feature_fillet, fillet, fillet_each, fillet_g2, fillet_g2_corners, fillet_max,
+    fillet_max_each,
+};
 pub use blend_corner::fillet_radii;
 pub use blend_variable::{RadiusSpline, Taper, fillet_chord, fillet_tapered, fillet_variable, fillet_variable_points, fillet_variable_spline, taper};
 pub use body::{Body, CapSignature, DISPLAY_ANGLE, DisplayShare, EdgeInfo, FaceInfo, FacePaint, FaceSource, Paint};
@@ -196,8 +199,8 @@ pub use meshbody::{MAX_TRIANGLES, mesh_body};
 pub use native::{decode_native_body, encode_native_body, native_preview_mesh};
 pub use offset::with_same_surface;
 pub use ops::{
-    BoolOp, boolean, can_join_all_touching_faces, can_join_touching_faces, compound_disjoint_extrusions, half_space, is_planar, join_apart,
-    place_matrix, split_by_plane, transform, transform_matrix, union_apart, with_attempt_budget,
+    BoolOp, boolean, can_join_all_touching_faces, can_join_touching_faces, compound_disjoint_extrusions, feature_boolean, half_space, is_planar,
+    join_apart, place_matrix, split_by_plane, transform, transform_matrix, union_apart, with_attempt_budget,
 };
 pub use polybool::{faceted_boolean, planar_boolean};
 pub use polyhedron::{HalfSpace, convex_polyhedron, draft, offset_faces, shell};

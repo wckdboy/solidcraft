@@ -31,10 +31,13 @@ fn cut_carries_exact_history() {
     assert_eq!(h.operands, 2);
     let kept = h.faces.iter().filter(|f| f.change == Change::Kept).count();
     assert_eq!(kept, 4, "{:?}", h.faces);
-    // The bore comes from both of truck's half-cylinder faces.
+    // OpenCASCADE's bore is one face along a seam; it comes back cut into pieces with no seam,
+    // as truck builds round walls, each from both of truck's half-cylinder faces.
     let bore: Vec<_> = h.faces.iter().filter(|f| f.origins.iter().any(|o| matches!(o, FaceOrigin::Face { operand: 1, .. }))).collect();
-    assert_eq!(bore.len(), 1);
-    assert_eq!(bore[0].origins, vec![FaceOrigin::Face { operand: 1, face: 1 }, FaceOrigin::Face { operand: 1, face: 2 }]);
+    assert!(bore.len() >= 2, "{bore:?}");
+    for piece in bore {
+        assert_eq!(piece.origins, vec![FaceOrigin::Face { operand: 1, face: 1 }, FaceOrigin::Face { operand: 1, face: 2 }]);
+    }
     // Every edge of the block's sides survives as one of its own edges.
     assert!(h.edges.iter().filter(|e| matches!(e.origins.as_slice(), [EdgeOrigin::Edge { operand: 0, .. }])).count() >= 8);
 }
@@ -55,4 +58,26 @@ fn fillet_faces_come_from_their_edges() {
     let made: Vec<_> = h.faces.iter().filter(|f| f.change == Change::Generated).collect();
     assert_eq!(made.len(), 1);
     assert_eq!(made[0].origins, vec![FaceOrigin::Edge { operand: 0, edge }]);
+}
+
+#[test]
+fn pieces_go_and_come_back_as_one_body() {
+    if !on() {
+        return;
+    }
+    let a = block();
+    let apart = box_solid(Vec3::new(60.0, 0.0, 0.0), Vec3::new(70.0, 10.0, 10.0)).unwrap();
+    // A union of bodies apart is one body of two pieces.
+    let two = boolean(&a, &apart, BoolOp::Union).unwrap();
+    assert_eq!(two.lumps().unwrap().len(), 2);
+    assert_eq!(two.face_count(), 12);
+    let h = two.history().unwrap();
+    assert!(h.faces.iter().all(|f| f.change == Change::Kept), "{:?}", h.faces);
+    // That body as an operand: a slab through both pieces cuts each.
+    let slab = box_solid(Vec3::new(-5.0, -5.0, 4.0), Vec3::new(80.0, 40.0, 6.0)).unwrap();
+    let cut = boolean(&two, &slab, BoolOp::Cut).unwrap();
+    assert_eq!(cut.lumps().unwrap().len(), 4);
+    let m = measure(&cut).unwrap();
+    let exact = (12000.0 + 1000.0) * 0.8;
+    assert!((m.volume - exact).abs() < 1e-4 * exact, "volume {}", m.volume);
 }

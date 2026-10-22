@@ -55,10 +55,16 @@ pub fn enabled() -> bool {
     std::env::var_os(ENV).is_some_and(|v| !v.is_empty()) && !UNAVAILABLE.load(Ordering::Relaxed)
 }
 
+/// Seconds one request may run before the server gives it up (`SOLIDCRAFT_NIGHTFALL_TIMEOUT`,
+/// default 10): truck then takes the operation, so a hang costs this long at most.
+fn timeout() -> f64 {
+    std::env::var("SOLIDCRAFT_NIGHTFALL_TIMEOUT").ok().and_then(|v| v.parse::<f64>().ok()).filter(|t| *t > 0.0 && t.is_finite()).unwrap_or(10.0)
+}
+
 fn start() -> Result<Server> {
     let path = std::env::var_os(ENV).ok_or_else(|| failed("SOLIDCRAFT_NIGHTFALL is not set"))?;
     let mut child = Command::new(path)
-        .args(["kernel", "serve"])
+        .args(["kernel", "serve", "--timeout", &timeout().to_string()])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::inherit())
@@ -87,12 +93,25 @@ fn exchange(server: &mut Server, mut request: Value) -> Result<Value> {
     }
     let mut line = serde_json::to_string(&request).map_err(failed)?;
     line.push('\n');
+    // SOLIDCRAFT_NIGHTFALL_DUMP=DIR keeps each request, to replay against `nf kernel serve`.
+    if let Some(dir) = std::env::var_os("SOLIDCRAFT_NIGHTFALL_DUMP") {
+        let path = std::path::Path::new(&dir).join(format!("request-{}-{id}.jsonl", std::process::id()));
+        if let Err(e) = std::fs::write(&path, &line) {
+            log::warn!("nightfall: cannot keep {}: {e}", path.display());
+        }
+    }
     server.stdin.write_all(line.as_bytes()).and_then(|()| server.stdin.flush()).map_err(failed)?;
     let mut reply = String::new();
     if server.stdout.read_line(&mut reply).map_err(failed)? == 0 {
         return Err(failed("nf kernel serve closed its output"));
     }
     let reply: Value = serde_json::from_str(&reply).map_err(failed)?;
+    log::debug!(
+        "nightfall {}: {:.1} ms in the server, {} bytes sent",
+        request.get("op").and_then(Value::as_str).unwrap_or("?"),
+        reply.get("ms").and_then(Value::as_f64).unwrap_or(f64::NAN),
+        line.len()
+    );
     if reply.get("id").and_then(Value::as_u64) != Some(id) {
         return Err(failed("reply out of order"));
     }
@@ -190,23 +209,42 @@ fn change(v: &Value) -> Result<Change> {
     }
 }
 
+/// The solid of a result's STEP, with the STEP face each of its faces was read from. Several
+/// solids (a union of bodies apart, a cut in two) are one body of several pieces, as truck
+/// makes them, its faces followed back to the pieces' through `join_apart`'s history.
+fn read(step: &str) -> Result<(Body, Vec<u64>)> {
+    let import = crate::step_import(step)?;
+    if import.bodies.is_empty() || import.bodies.iter().any(|b| !b.closed) {
+        return Err(failed("the result is not closed solids"));
+    }
+    if let [one] = import.bodies.as_slice() {
+        return Ok((one.body.clone(), one.face_origin.clone()));
+    }
+    let pieces: Vec<Body> = import.bodies.iter().map(|b| b.body.clone()).collect();
+    let joined = crate::join_apart(&pieces)?.ok_or_else(|| failed("cannot join the result's pieces"))?;
+    let history = joined.history().ok_or_else(|| failed("the joined pieces have no history"))?;
+    let origin = history
+        .faces
+        .iter()
+        .map(|f| match f.origins.as_slice() {
+            [FaceOrigin::Face { operand, face }] => import.bodies.get(*operand).and_then(|b| b.face_origin.get(*face)).copied(),
+            _ => None,
+        })
+        .collect::<Option<Vec<u64>>>()
+        .ok_or_else(|| failed("a joined face has no single piece face"))?;
+    Ok((joined.without_history(), origin))
+}
+
 /// The result of a reply: its solid, numbered as the reply numbers it (STEP face order, which
 /// `face_origin` records for each of our faces), with the history the reply gives.
 fn result(reply: &Value, operands: &[&Body]) -> Result<Body> {
     let step = reply.get("step").and_then(Value::as_str).ok_or_else(|| failed("reply has no STEP"))?;
     let entries = reply.get("faces").and_then(Value::as_array).ok_or_else(|| failed("reply has no faces"))?;
-    let import = crate::step_import(step)?;
-    let [imported] = import.bodies.as_slice() else {
-        return Err(failed("the result is not one solid"));
-    };
-    if !imported.closed {
-        return Err(failed("the result is not closed"));
-    }
-    let body = imported.body.clone();
-    let mut files: Vec<u64> = imported.face_origin.clone();
+    let (body, face_origin) = read(step)?;
+    let mut files: Vec<u64> = face_origin.clone();
     files.sort_unstable();
     files.dedup();
-    if files.len() != entries.len() || imported.face_origin.len() != body.face_count() {
+    if files.len() != entries.len() || face_origin.len() != body.face_count() {
         return Err(failed("result faces do not match the reply"));
     }
     let rank = |id: &u64| files.binary_search(id).map_err(|_| failed("unknown result face"));
@@ -214,7 +252,7 @@ fn result(reply: &Value, operands: &[&Body]) -> Result<Body> {
     // Display triangles cut curved faces short by their sag; 1% holds well within that.
     let tol = body.size() * SAMPLE_TOL;
     let mut areas = vec![0.0; files.len()];
-    for (f, id) in body.faces(tol)?.iter().zip(&imported.face_origin) {
+    for (f, id) in body.faces(tol)?.iter().zip(&face_origin) {
         if let Some(a) = areas.get_mut(rank(id)?) {
             *a += f.area;
         }
@@ -226,18 +264,36 @@ fn result(reply: &Value, operands: &[&Body]) -> Result<Body> {
         }
     }
     let mut faces = Vec::with_capacity(body.face_count());
-    for id in &imported.face_origin {
+    for id in &face_origin {
         let k = rank(id)?;
         let entry = entries.get(k).ok_or_else(|| failed("unknown result face"))?;
         let origins: Vec<FaceOrigin> =
             entry.get("from").and_then(Value::as_array).map(|a| a.iter().map(origin).collect()).transpose()?.unwrap_or_default();
-        let pieces = imported.face_origin.iter().filter(|x| *x == id).count();
+        let pieces = face_origin.iter().filter(|x| *x == id).count();
         let change = if pieces > 1 && !origins.is_empty() { Change::Split } else { change(entry.get("change").unwrap_or(&Value::Null))? };
         faces.push(FaceProv { origins, change });
     }
     let edges = edge_history(&body, &faces, operands);
     let counts: Vec<(usize, usize)> = operands.iter().map(|b| (b.face_count(), b.edge_count())).collect();
-    body.with_history_counts(History { operands: operands.len(), faces, edges }, &counts)
+    let mut history = History { operands: operands.len(), faces, edges };
+    history.check_counts((body.face_count(), body.edge_count()), &counts)?;
+    // OpenCASCADE writes a whole turn of a cylinder or cone as one face along a seam; truck
+    // builds such walls in two halves, and its later operations (a shell's offset, a chamfer)
+    // expect that. Halve them as the kernel's own boolean does, the history composed through.
+    let body = match crate::seam_faces::halved(&body) {
+        Some((halves, Some(mut split))) if halves.face_count() != body.face_count() => {
+            split.substitute(0, &history)?;
+            history = split;
+            halves
+        }
+        _ => body,
+    };
+    let body = body.with_history_counts(history, &counts)?;
+    // What truck's results carry from their operands: face sources through the history (a
+    // face kept or modified keeps its construction identity), protection and colour.
+    let sources = body.history().map(|h| h.face_sources(operands)).filter(|s| s.iter().any(Option::is_some));
+    let body = body.with_face_sources(sources.map(std::sync::Arc::new)).with_color(operands.first().and_then(|o| o.color()));
+    Ok(operands.iter().fold(body, |b, o| b.inherit_regularization_protection(o)))
 }
 
 /// Each result edge's origin, from its faces' origins: an operand's edge where both faces come
@@ -313,7 +369,12 @@ pub(crate) fn boolean(a: &Body, b: &Body, op: BoolOp) -> Option<Body> {
         let (pa, ta) = operand(a)?;
         let (pb, tb) = operand(b)?;
         let reply = call(json!({"op": "boolean", "kind": kind, "operands": [pa, pb], "sample_tolerance": 2.0 * ta.max(tb)}))?;
-        result(&reply, &[a, b])
+        let body = result(&reply, &[a, b])?;
+        // The planar roles truck's boolean keeps, by the same rules.
+        match op {
+            BoolOp::Cut => body.with_preserved_boolean_planar_sources(a, b, true),
+            BoolOp::Union | BoolOp::Intersect => body.with_preserved_union_planar_sources(a, b),
+        }
     };
     run().map_err(|e| warn_fallback("boolean", &e)).ok()
 }
