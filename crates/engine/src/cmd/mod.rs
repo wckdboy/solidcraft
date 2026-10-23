@@ -20,6 +20,7 @@ macro_rules! planned {
     };
 }
 
+mod analysis;
 mod bom;
 mod browser;
 pub(crate) mod clearance;
@@ -295,6 +296,7 @@ pub fn command_specs() -> Vec<&'static CommandSpec> {
     v.extend(file::COMMANDS.iter());
     v.extend(metadata::COMMANDS.iter());
     v.extend(inspect::COMMANDS.iter());
+    v.extend(analysis::COMMANDS.iter());
     v.extend(compare::COMMANDS.iter());
     v.extend(silhouette::COMMANDS.iter());
     v.extend(materials::COMMANDS.iter());
