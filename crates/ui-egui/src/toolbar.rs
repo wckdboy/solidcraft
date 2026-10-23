@@ -296,16 +296,31 @@ pub fn app_bar(app: &mut SolveApp, ui: &mut egui::Ui) {
             let c = pos2(left + 20.0, r.center().y);
             crate::icons::glyphs::brand_mark(ui.painter(), c);
         }
+        // This fork's Nightfall backend (docs/nightfall-backend.md): say which kernel models.
+        #[cfg(not(target_arch = "wasm32"))]
+        let nightfall = solidcraft_engine::kernel::nightfall::enabled();
+        #[cfg(target_arch = "wasm32")]
+        let nightfall = false;
+        let mut badge = 0.0;
         if !compact_actions {
-            ui.painter().text(
+            let name = ui.painter().text(
                 pos2(left + 36.0, r.center().y),
                 Align2::LEFT_CENTER,
                 "SolidCraft",
                 crate::fonts::semibold(t.font_heading),
                 t.app_bar_text,
             );
+            if nightfall {
+                let galley = ui.painter().layout_no_wrap("Nightfall OCCT".into(), crate::fonts::semibold(t.font_caption), t.on_accent);
+                let pill = Rect::from_min_size(pos2(name.right() + 8.0, r.center().y - galley.size().y / 2.0 - 3.0), galley.size() + vec2(12.0, 6.0));
+                ui.painter().rect_filled(pill, pill.height() / 2.0, t.accent);
+                ui.painter().galley(pill.min + vec2(6.0, 3.0), galley, t.on_accent);
+                ui.interact(pill, ui.id().with("appbar_kernel"), Sense::hover())
+                    .on_hover_text("Booleans, fillets and chamfers run on Nightfall's OpenCASCADE kernel (SOLIDCRAFT_NIGHTFALL)");
+                badge = pill.right() + 24.0 - (left + 128.0);
+            }
         }
-        let mut x = left + if compact_actions { 56.0 } else { 128.0 };
+        let mut x = left + if compact_actions { 56.0 } else { 128.0 + badge.max(0.0) };
         let home = Rect::from_center_size(pos2(x - 4.0, r.center().y), vec2(32.0, 32.0));
         let idle = !app.file_load.busy();
         let home_response = ui.interact(home, ui.id().with("appbar_home"), if idle { Sense::click() } else { Sense::hover() });

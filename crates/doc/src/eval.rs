@@ -590,7 +590,7 @@ fn fillet_fitted(
     r: f64,
     fit: crate::FilletFit,
 ) -> std::result::Result<(kernel::Body, Option<Vec<f64>>), kernel::KernelError> {
-    match kernel::fillet(body, edges, r) {
+    match kernel::feature_fillet(body, edges, r) {
         Err(kernel::KernelError::TooLarge(why)) if fit == crate::FilletFit::Reduce => match kernel::fillet_max_each(body, edges, r) {
             // Built at the radius asked for after all (the groups apart): nothing reduced.
             Some((used, b)) => Ok((b, used.iter().any(|u| *u < r).then_some(used))),
@@ -2302,7 +2302,7 @@ fn intersection_tool_union(tools: Vec<Traced>) -> Result<Vec<Traced>> {
         while let Some(a) = iter.next() {
             match iter.next() {
                 Some(b) => {
-                    let u = kernel::boolean(&a.body, &b.body, BoolOp::Union)?
+                    let u = kernel::feature_boolean(&a.body, &b.body, BoolOp::Union)?
                         .ok_or_else(|| DocError::Invalid("intersection tool union is empty".into()))?;
                     next.push(Traced::step(u, &[&a, &b]));
                 }
@@ -2456,7 +2456,7 @@ fn apply_traced(state: &mut ModelState, f: &Feature, tools: Vec<Traced>, op: Ope
             // Each union keeps the lineage of what it joins, so the joined body's faces keep
             // their names (the tool's new faces are named by their roles).
             let union = |a: &Traced, b: &Traced| -> Result<Traced> {
-                let u = kernel::boolean(&a.body, &b.body, BoolOp::Union)?.ok_or_else(|| DocError::Invalid("join produced nothing".into()))?;
+                let u = kernel::feature_boolean(&a.body, &b.body, BoolOp::Union)?.ok_or_else(|| DocError::Invalid("join produced nothing".into()))?;
                 Ok(Traced::step(u, &[a, b]))
             };
             for tool in &tools {
@@ -2512,7 +2512,7 @@ fn apply_traced(state: &mut ModelState, f: &Feature, tools: Vec<Traced>, op: Ope
                 for t in &tools {
                     let t = &tool_in(t, into)?;
                     acc = match acc {
-                        Some(a) => kernel::boolean(&a.body, &t.body, bop)?.map(|r| Traced::step(r, &[&a, t])),
+                        Some(a) => kernel::feature_boolean(&a.body, &t.body, bop)?.map(|r| Traced::step(r, &[&a, t])),
                         None => None,
                     };
                 }
@@ -5336,7 +5336,7 @@ fn replay(
                         }
                         None => fillet_fitted(&mb.body, &moved, r, *fit)?.0,
                     },
-                    _ => kernel::fillet(&mb.body, &moved, r)?,
+                    _ => kernel::feature_fillet(&mb.body, &moved, r)?,
                 };
                 // A copy blends edges the pattern's own copies made: named after the body so far.
                 let nb = mb.traced().then(nb);
@@ -5752,7 +5752,7 @@ fn chamfer_with(
     };
     Ok(match side {
         Some(s) => kernel::chamfer_sides(b, edges, d, s, flip)?,
-        None => kernel::chamfer(b, edges, d)?,
+        None => kernel::feature_chamfer(b, edges, d)?,
     })
 }
 
@@ -5948,7 +5948,7 @@ fn eval_feature(doc: &Document, vals: &BTreeMap<String, Value>, f: &Feature, st:
             let input = mb.traced();
             // The shell, and the operands of the operation that made it.
             let (nb, operands) = match direction.as_str() {
-                "" | "inside" => (kernel::shell(&mb.body, &open, t)?, vec![input]),
+                "" | "inside" => (kernel::feature_shell(&mb.body, &open, t)?, vec![input]),
                 "outside" | "both" => {
                     // Walls grown out of the faces (or half out, half in): an offset body less a
                     // cavity, the open faces pushed out of the way.

@@ -50,7 +50,7 @@ pub(crate) fn needed(a: &Body, b: &Body) -> bool {
 
 /// `body` with every face that runs along a seam edge twice split in two, and its history over
 /// `body`. `None` when a split fails.
-fn halved(body: &Body) -> Option<(Body, Option<History>)> {
+pub(crate) fn halved(body: &Body) -> Option<(Body, Option<History>)> {
     let (mut x, mut h) = (body.clone(), Some(History::identity(body)));
     for _ in 0..MAX_SPLITS {
         let Some((face, plane)) = next_split(&x) else { return Some((x, h)) };

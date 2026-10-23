@@ -1841,6 +1841,31 @@ fn closed(input: &Body, b: Body) -> Result<Body> {
     }
 }
 
+/// [`fillet`] for a modelling feature: on the Nightfall backend when it is on and takes it
+/// (docs/nightfall-backend.md), else [`fillet`], whose refusals (a radius too large) stand.
+pub fn feature_fillet(body: &Body, edges: &[Vec3], radius: f64) -> Result<Body> {
+    #[cfg(not(target_arch = "wasm32"))]
+    if crate::nightfall::enabled()
+        && !body.is_mesh()
+        && let Some(b) = crate::nightfall::blend(body, edges, radius, true)
+    {
+        return Ok(b);
+    }
+    fillet(body, edges, radius)
+}
+
+/// [`chamfer`] for a modelling feature, on the Nightfall backend when it is on and takes it.
+pub fn feature_chamfer(body: &Body, edges: &[Vec3], distance: f64) -> Result<Body> {
+    #[cfg(not(target_arch = "wasm32"))]
+    if crate::nightfall::enabled()
+        && !body.is_mesh()
+        && let Some(b) = crate::nightfall::blend(body, edges, distance, false)
+    {
+        return Ok(b);
+    }
+    chamfer(body, edges, distance)
+}
+
 /// Constant-radius fillet of the edges nearest to the given points. A radius too large for the
 /// faces around the edges is refused with [`KernelError::TooLarge`] ([`fillet_max`] finds the
 /// largest that works).
