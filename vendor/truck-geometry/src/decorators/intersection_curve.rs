@@ -316,7 +316,11 @@ where
         self.surface0.transform_by(trans);
         self.surface1.transform_by(trans);
         self.leader.transform_by(trans);
-        self.tol *= trans.norm_l2();
+        // SolidCraft: lengths scale by the linear part alone. The norm of the whole matrix grows
+        // with the translation, so a 100 mm move made a 0.144 mm edge tolerance 14.4 mm, wide
+        // enough to project points across a small hole and export the edge back and forth (#4598).
+        let linear = Matrix3::from_cols(trans.x.truncate(), trans.y.truncate(), trans.z.truncate());
+        self.tol *= linear.norm_l2();
     }
 }
 

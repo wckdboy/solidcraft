@@ -60,6 +60,10 @@ Changes:
 ## truck-geometry 0.5.0 (Apache-2.0, © RICOS Co. Ltd., https://github.com/ricosjp/truck)
 
 Changes:
+- `decorators/intersection_curve.rs`: a transformed intersection curve scales its tolerance by
+  the norm of the transform's linear part. The norm of the whole 4×4 matrix grows with the
+  translation: a 100 mm move made a 0.144 mm tolerance 14.4 mm, its points projected across a
+  small hole, and the edge exported back and forth across it (#4598).
 - `decorators/intersection_curve.rs`: `IntersectionCurve::parameter_division` divides as
   `algo::curve::parameter_division` does (the same split points, in the same order), but each
   point's projection onto the two surfaces starts from the parameters of the point that begins
