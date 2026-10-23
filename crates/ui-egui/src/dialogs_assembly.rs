@@ -112,6 +112,15 @@ pub enum Asm {
         /// Pairs closer than this (mm, as typed) are listed too.
         clearance: String,
     },
+    /// Static Stress (`analysis.static_stress`): faces held and faces loaded, a force in N; the
+    /// answer comes from its Compute button.
+    Stress {
+        /// The force's components (N, as typed).
+        force: [String; 3],
+        result: Option<Value>,
+        /// The faces and force the result is of: shown only while they are still the dialog's.
+        of: Option<(Vec<Sel>, Vec<Sel>, [String; 3])>,
+    },
     /// Motion Trace: a picked point's path, previewed; OK keeps it as a 3D sketch spline.
     Trace(Box<TraceForm>),
 }
@@ -188,6 +197,7 @@ impl Asm {
             },
             Asm::Cam(_) => "CAM",
             Asm::Interference { .. } => "INTERFERENCE",
+            Asm::Stress { .. } => "STATIC STRESS",
             Asm::Trace(_) => "MOTION TRACE",
         }
     }
@@ -222,6 +232,10 @@ pub fn start(app: &SolveApp, id: &str) -> Option<(Kind, Vec<SelInput>)> {
         }
         "joint.gear" | "joint.rack_pinion" | "joint.screw" => crate::dialogs_coupling::start(app, id)?,
         "joint.cam" => crate::dialogs_coupling::cam::start(app),
+        "analysis.static_stress" => (
+            Asm::Stress { force: ["0".into(), "0".into(), "-100".into()], result: None, of: None },
+            vec![SelInput::new("Fixed faces", FACES, true), SelInput::new("Loaded faces", FACES, true)],
+        ),
         "inspect.interference" => (
             Asm::Interference { result: None, overlaps: Vec::new(), of: Vec::new(), clearance: "0".into() },
             vec![SelInput::new("Bodies (all if none)", BODIES, true)],
@@ -713,9 +727,109 @@ pub fn rows(app: &mut SolveApp, ui: &mut egui::Ui, k: &mut Asm, inputs: &mut [Se
                 interference_rows(app, ui, r);
             }
         }
+        Asm::Stress { force, result, of } => {
+            for (label, value) in ["Force X (N)", "Force Y (N)", "Force Z (N)"].into_iter().zip(force.iter_mut()) {
+                enter |= expr_row(ui, label, value);
+            }
+            let now = (sel_items(inputs, 0).to_vec(), sel_items(inputs, 1).to_vec(), force.clone());
+            let stale = result.is_some() && of.as_ref() != Some(&now);
+            form_row(ui, "", |ui| {
+                let label = crate::i18n::tr(if stale { "dialog.compute_again" } else { "dialog.compute" });
+                if crate::ui_kit::button(ui, label, crate::ui_kit::Button::Normal).clicked() {
+                    *result = Some(stress(app, inputs, force));
+                    *of = Some(now.clone());
+                }
+            });
+            // A result of other faces or another force is not shown: Compute again.
+            if let Some(r) = result.as_ref().filter(|_| of.as_ref() == Some(&now)) {
+                stress_rows(ui, r);
+            }
+        }
         Asm::Trace(f) => enter |= trace::rows(app, ui, f, inputs),
     }
     enter
+}
+
+/// Run the analysis on the picked faces: the force (N) spread over the loaded faces.
+fn stress(app: &mut SolveApp, inputs: &[SelInput], force: &[String; 3]) -> Value {
+    let (fixed, loaded) = (sel_items(inputs, 0).face_points(), sel_items(inputs, 1).face_points());
+    if fixed.is_empty() || loaded.is_empty() {
+        return json!({"error": crate::i18n::tr("dialog.stress_pick_faces")});
+    }
+    let mut f = [0.0; 3];
+    for (out, text) in f.iter_mut().zip(force) {
+        match force_newtons(text) {
+            Some(v) => *out = v,
+            None => return json!({"error": crate::i18n::format("dialog.stress_force_invalid", &[("text", text)])}),
+        }
+    }
+    // The faces' body: the first picked face's.
+    let body = sel_items(inputs, 0).iter().find_map(|x| if let Sel::Face { body, .. } = x { Some(body.clone()) } else { None });
+    let mut p = json!({
+        "fixed": fixed.into_iter().map(pt).collect::<Vec<_>>(),
+        "loads": [{"faces": loaded.into_iter().map(pt).collect::<Vec<_>>(), "force": f}],
+    });
+    if let Some(b) = body {
+        p["body"] = json!(b);
+    }
+    app.run("analysis.static_stress", p).unwrap_or_else(|e| json!({"error": e}))
+}
+
+/// A force typed into a field, in N: a number or a unitless expression ("2*50").
+fn force_newtons(text: &str) -> Option<f64> {
+    use solidcraft_engine::doc::expr;
+    let no_params = |n: &str| Err(solidcraft_engine::doc::DocError::Expr(format!("unknown parameter `{n}`")));
+    let defaults = expr::Defaults::default();
+    expr::eval_with_defaults(text.trim(), &no_params, defaults)
+        .ok()
+        .and_then(|v| v.to_kind_in(expr::Kind::Unitless, defaults).ok())
+        .or_else(|| crate::prefs::parse_number(text))
+        .filter(|v| v.is_finite())
+}
+
+fn stress_rows(ui: &mut egui::Ui, r: &Value) {
+    let t = Tokens::get();
+    if let Some(e) = r.get("error").and_then(Value::as_str) {
+        form_row(ui, "", |ui| {
+            ui.label(RichText::new(e).color(t.error));
+        });
+        return;
+    }
+    let number = |k: &str| r[k].as_f64().unwrap_or(f64::NAN);
+    form_row(ui, "Max stress", |ui| {
+        ui.label(format!("{:.1} MPa (von Mises)", number("max_von_mises_mpa")));
+    });
+    form_row(ui, "Max deflection", |ui| {
+        ui.label(format!("{:.4} mm", number("max_displacement_mm")));
+    });
+    if let Some(sf) = r["safety_factor"].as_f64() {
+        // Below 1 it yields; below 2 is thin for most parts.
+        let color = if sf < 1.0 {
+            t.error
+        } else if sf < 2.0 {
+            t.warning
+        } else {
+            t.form_success
+        };
+        form_row(ui, "Safety factor", |ui| {
+            ui.label(RichText::new(format!("{sf:.2} (yield {:.0} MPa)", number("yield_mpa"))).color(color));
+        });
+    }
+    form_row(ui, "Material", |ui| {
+        ui.label(format!(
+            "{}, E {:.0} GPa",
+            r["material"]["name"].as_str().unwrap_or(""),
+            r["material"]["youngs_modulus_mpa"].as_f64().unwrap_or(0.0) / 1000.0
+        ));
+    });
+    form_row(ui, "Mesh", |ui| {
+        ui.label(format!("{} elements, {:.1} mm", r["mesh"]["tetrahedra"], r["mesh"]["size_mm"].as_f64().unwrap_or(0.0)));
+    });
+    if let Some(w) = r.get("warning").and_then(Value::as_str) {
+        form_row(ui, "", |ui| {
+            ui.label(RichText::new(w).color(t.warning));
+        });
+    }
 }
 
 fn capital(s: &str) -> String {
@@ -962,7 +1076,7 @@ pub fn commands(app: &SolveApp, k: &Asm, inputs: &[SelInput]) -> Result<Vec<(Str
         Asm::Coupling(f) => return crate::dialogs_coupling::commands(app, f, inputs),
         Asm::Cam(f) => return crate::dialogs_coupling::cam::commands(app, f, inputs),
         // The check runs from its Compute button; OK only closes.
-        Asm::Interference { .. } => Vec::new(),
+        Asm::Interference { .. } | Asm::Stress { .. } => Vec::new(),
         Asm::Trace(f) => cmd("motion.trace.keep", trace::params(s, f, inputs)?),
     })
 }

@@ -314,6 +314,7 @@ fn remaining_dialogs_keep_kit_chrome_and_cancel_restores_preview() {
         "parts.insert",
         "joint.drive",
         "inspect.interference",
+        "analysis.static_stress",
         "file.save_mesh",
         "file.export_view_dxf",
         "sheet.flat_pattern",
