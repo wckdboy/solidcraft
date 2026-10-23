@@ -20,8 +20,8 @@ With the variable unset, nothing changes, and the browser build never has the ba
 ## What runs where
 
 Only the operations a user's features make are routed. In the kernel these are
-`feature_boolean`, `feature_fillet` and `feature_chamfer`; the document calls them for joins,
-cuts, intersects, fillets and chamfers. The kernel's own algorithms (blends, shells, coplanar
+`feature_boolean`, `feature_fillet`, `feature_chamfer` and `feature_shell`; the document calls them
+for joins, cuts, intersects, fillets, chamfers and inward shells. The kernel's own algorithms (blends, shells, coplanar
 joins and so on) keep calling truck's `boolean`, `fillet` and `chamfer`, so the intermediate
 bodies they were written for are unchanged.
 
@@ -30,6 +30,7 @@ bodies they were written for are unchanged.
 | Join, cut, intersect | Nightfall first, truck if refused | truck |
 | Fillet (constant radius) | Nightfall first, truck if refused | truck |
 | Chamfer (equal distance) | Nightfall first, truck if refused | truck |
+| Shell (inward, with open faces) | Nightfall first, truck if refused | truck |
 | Everything else | truck | truck |
 
 A refused request falls back to truck and logs `nightfall … refused, using truck: …` at warn
@@ -95,7 +96,7 @@ that pin truck's exact face order or its fallbacks are expected to differ.
 
 ## Limits
 
-- The backend handles three operations. Variable fillets, G2 blends, shells, drafts and offsets
+- The backend handles four operations. Variable fillets, G2 blends, outward shells, drafts and offsets
   stay on truck.
 - Each call ships its operands as STEP, which costs a few milliseconds for small parts. A later
   protocol version can cache operands by digest.

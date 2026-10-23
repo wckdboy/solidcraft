@@ -5948,7 +5948,7 @@ fn eval_feature(doc: &Document, vals: &BTreeMap<String, Value>, f: &Feature, st:
             let input = mb.traced();
             // The shell, and the operands of the operation that made it.
             let (nb, operands) = match direction.as_str() {
-                "" | "inside" => (kernel::shell(&mb.body, &open, t)?, vec![input]),
+                "" | "inside" => (kernel::feature_shell(&mb.body, &open, t)?, vec![input]),
                 "outside" | "both" => {
                     // Walls grown out of the faces (or half out, half in): an offset body less a
                     // cavity, the open faces pushed out of the way.

@@ -81,3 +81,20 @@ fn pieces_go_and_come_back_as_one_body() {
     let exact = (12000.0 + 1000.0) * 0.8;
     assert!((m.volume - exact).abs() < 1e-4 * exact, "volume {}", m.volume);
 }
+
+#[test]
+fn shell_walls_are_offsets_of_the_faces_they_line() {
+    if !on() {
+        return;
+    }
+    let a = block();
+    let top = Vec3::new(20.0, 15.0, 10.0);
+    let r = shell(&a, &[top], 2.0).unwrap();
+    let m = measure(&r).unwrap();
+    let exact = 12000.0 - 36.0 * 26.0 * 8.0;
+    assert!((m.volume - exact).abs() < 1e-4 * exact, "volume {}", m.volume);
+    let h = r.history().unwrap();
+    let inner: Vec<_> = h.faces.iter().filter(|f| f.origins.iter().any(|o| matches!(o, FaceOrigin::Offset { .. }))).collect();
+    assert_eq!(inner.len(), 5, "{:?}", h.faces);
+    assert!(inner.iter().all(|f| f.change == Change::Generated));
+}

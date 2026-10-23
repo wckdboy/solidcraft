@@ -189,6 +189,18 @@ fn cavity_history(poly: &Body, on: &[usize], groups: &[Vec<usize>]) -> Option<Hi
     Some(record::from_faces(&poly.solid, 1, faces))
 }
 
+/// [`shell`] for a modelling feature: on the Nightfall backend when it is on and takes it
+/// (docs/nightfall-backend.md), else [`shell`].
+pub fn feature_shell(b: &Body, open: &[Vec3], thickness: f64) -> Result<Body> {
+    #[cfg(not(target_arch = "wasm32"))]
+    if crate::nightfall::enabled()
+        && let Some(r) = crate::nightfall::shell(b, open, thickness)
+    {
+        return Ok(r);
+    }
+    shell(b, open, thickness)
+}
+
 /// Hollow a convex planar body: walls of `thickness` inside, faces near `open` removed. The
 /// result's history is over `[b]`: the inner walls are offsets of the faces they line.
 pub fn shell(b: &Body, open: &[Vec3], thickness: f64) -> Result<Body> {

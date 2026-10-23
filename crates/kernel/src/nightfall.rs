@@ -267,8 +267,15 @@ fn result(reply: &Value, operands: &[&Body]) -> Result<Body> {
     for id in &face_origin {
         let k = rank(id)?;
         let entry = entries.get(k).ok_or_else(|| failed("unknown result face"))?;
-        let origins: Vec<FaceOrigin> =
+        let mut origins: Vec<FaceOrigin> =
             entry.get("from").and_then(Value::as_array).map(|a| a.iter().map(origin).collect()).transpose()?.unwrap_or_default();
+        // A shell's inner wall: an offset of the faces it lines, as truck's shell records it.
+        for o in entry.get("offset").and_then(Value::as_array).into_iter().flatten() {
+            match origin(o)? {
+                FaceOrigin::Face { operand, face } => origins.push(FaceOrigin::Offset { operand, face }),
+                _ => return Err(failed("malformed offset origin")),
+            }
+        }
         let pieces = face_origin.iter().filter(|x| *x == id).count();
         let change = if pieces > 1 && !origins.is_empty() { Change::Split } else { change(entry.get("change").unwrap_or(&Value::Null))? };
         faces.push(FaceProv { origins, change });
@@ -399,6 +406,39 @@ pub(crate) fn blend(body: &Body, picks: &[Vec3], size: f64, round: bool) -> Opti
         result(&reply, &[body])
     };
     run().map_err(|e| warn_fallback(if round { "fillet" } else { "chamfer" }, &e)).ok()
+}
+
+/// A shell `thickness` thick inward with the faces nearest `open` removed, or `None` to leave
+/// it to truck (no open face, or the request failed). Inner walls are offsets of the faces
+/// they line, as truck's shell records them.
+pub(crate) fn shell(body: &Body, open: &[Vec3], thickness: f64) -> Option<Body> {
+    if body.is_mesh() || open.is_empty() {
+        return None;
+    }
+    let run = || -> Result<Body> {
+        let (p, tol) = operand(body)?;
+        let m = body.tessellate(tol)?;
+        let mut faces: Vec<usize> = Vec::new();
+        for at in open {
+            let near = m
+                .triangles
+                .iter()
+                .zip(&m.tri_face)
+                .filter_map(|(t, f)| m.tri(t).map(|[a, b, c]| (crate::polyhedron::point_tri(*at, a, b, c), *f as usize)))
+                .min_by(|x, y| x.0.total_cmp(&y.0));
+            match near {
+                Some((d, f)) if d < body.size() * 1e-3 + 1e-6 => {
+                    if !faces.contains(&f) {
+                        faces.push(f);
+                    }
+                }
+                _ => return Err(failed("no face near an open point")),
+            }
+        }
+        let reply = call(json!({"op": "shell", "operands": [p], "faces": faces, "thickness": thickness, "sample_tolerance": 2.0 * tol}))?;
+        result(&reply, &[body])?.with_shell_planar_sources(body, thickness, open)
+    };
+    run().map_err(|e| warn_fallback("shell", &e)).ok()
 }
 
 #[cfg(test)]
