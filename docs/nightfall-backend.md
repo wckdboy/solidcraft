@@ -6,6 +6,14 @@ edge history. SolidCraft keeps everything else, including its document, timeline
 MCP server, UI and truck. The aim is SolidCraft's AI-native modelling on an industrial kernel,
 without linking that kernel.
 
+![SolidCraft with the Nightfall OCCT badge: the sensor enclosure, its ten joins and cuts made by Nightfall](images/nightfall-enclosure.jpg)
+
+The same design after `board_w` went from 60 to 90 mm through the control channel an agent uses
+(`engine.batch`). All 21 features rebuilt with no errors, and the holes and the USB cut-out
+followed by name:
+
+![The sensor enclosure widened to a 90 mm board](images/nightfall-enclosure_edit.jpg)
+
 ## Turning it on
 
 Build Nightfall, then point SolidCraft at its `nf` executable:
