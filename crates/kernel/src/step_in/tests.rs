@@ -2330,3 +2330,20 @@ fn a_rim_that_runs_back_and_forth_imports_whole() {
     assert!(rel(m.volume, 74_898.5) < 2e-3, "volume {}", m.volume);
     assert_eq!(m.merged.faces, 5);
 }
+
+/// #4598: a bored rod moved 100 mm exports its bore's edge as the curve it is (an edge's
+/// tolerance follows the move's rotation and scale, not its translation) and imports whole.
+#[test]
+fn moved_bored_rod_round_trips_whole() {
+    let rod = cylinder(Vec3::ZERO, Vec3::Z, 20.0, 60.0).unwrap();
+    let bore = cylinder(Vec3::new(10.0, 0.0, 30.0), Vec3::X, 4.0, 15.0).unwrap();
+    let cut = boolean(&rod, &bore, BoolOp::Cut).unwrap().unwrap();
+    let moved = crate::transform(&cut, Vec3::new(100.0, 0.0, 0.0), Vec3::ZERO, Vec3::Z, 0.0).unwrap();
+    let text = step_export(&[&moved], "test").unwrap();
+    let imported = step_import(&text).unwrap();
+    assert_eq!(imported.bodies.len(), 1, "{:?}", imported.warnings);
+    let (before, after) = (measure(&cut).unwrap(), measure(&imported.bodies[0].body).unwrap());
+    // The faceted measure of the curved faces: both within the same chord tolerance.
+    assert!(rel(after.volume, before.volume) < 1e-4, "{} vs {}", after.volume, before.volume);
+    assert_eq!(after.merged.faces, before.merged.faces);
+}
